@@ -106,8 +106,11 @@ pub fn create_olm_message(
 ) -> Option<String> {
     let state = &*ENIGMATICK_STATE.clone();
 
+    let one_time_key_bytes = base64::decode(one_time_key).unwrap();
+    //let one_time_key_bytes: &[u8] = &one_time_key_bytes;
+    let one_time_key = Curve25519PublicKey::from_bytes(one_time_key_bytes.try_into().unwrap());
     let identity_key = Curve25519PublicKey::from_base64(&identity_key).unwrap();
-    let one_time_key = Curve25519PublicKey::from_base64(&one_time_key).unwrap();
+    //let one_time_key = Curve25519PublicKey::from_base64(&one_time_key).unwrap();
 
     let mut olm_message = Option::<String>::None;
 
