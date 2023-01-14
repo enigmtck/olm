@@ -142,9 +142,17 @@ pub fn create_olm_message(
     identity_key: Option<String>,
     one_time_key: Option<String>,
 ) -> Option<String> {
-    // Consider using olm_sessions map to check for existence of map to create message
-    // that would probably make the _keys above Optional
     if let Ok(mut x) = (*ENIGMATICK_STATE).try_lock() {
+        // check for a pre-existing session
+        log(&format!(
+            "in create_olm_message state\nsessions\n{:#?}",
+            x.get_olm_sessions()
+        ));
+
+        log(&format!(
+            "in create_olm_message state\nchecking for\n{:#?}",
+            ap_id
+        ));
         if let Some(session) = x.get_olm_session(ap_id.clone()) {
             let pickle: Option<SessionPickle> =
                 match serde_json::from_str::<SessionPickle>(&session) {
@@ -166,6 +174,7 @@ pub fn create_olm_message(
         } else if let (Some(pickle), Some(identity_key), Some(one_time_key)) =
             (&x.pickled_account, identity_key, one_time_key)
         {
+            // if there's no pre-existing session and keys are submitted, create a new session
             let one_time_key_bytes = base64::decode(one_time_key).unwrap();
             let one_time_key =
                 Curve25519PublicKey::from_bytes(one_time_key_bytes.try_into().unwrap());
@@ -202,11 +211,56 @@ pub fn decrypt_olm_message(ap_id: String, message: String, identity_key: String)
 
     let identity_key = Curve25519PublicKey::from_base64(&identity_key).unwrap();
 
+    // need to try decrypting with existing session first here
     if let Ok(mut x) = state.try_lock() {
         if let Some(pickle) = &x.pickled_account {
             let mut account = Account::from(serde_json::from_str::<AccountPickle>(pickle).unwrap());
 
-            if let OlmMessage::PreKey(m) = serde_json::from_str(&message).unwrap() {
+            // check for a pre-existing session
+            log(&format!(
+                "in create_olm_message state\nsessions\n{:#?}",
+                x.get_olm_sessions()
+            ));
+
+            log(&format!(
+                "in create_olm_message state\nchecking for\n{:#?}",
+                ap_id
+            ));
+            if let Some(session) = x.get_olm_session(ap_id.clone()) {
+                let pickle: Option<SessionPickle> =
+                    match serde_json::from_str::<SessionPickle>(&session) {
+                        Ok(x) => Option::from(x),
+                        Err(e) => {
+                            log(&format!("failed to deserialize session pickle: {:#?}", e));
+                            Option::None
+                        }
+                    };
+
+                if let Some(pickle) = pickle {
+                    let mut session = Session::from_pickle(pickle);
+
+                    if let OlmMessage::Normal(m) = serde_json::from_str(&message).unwrap() {
+                        match session.decrypt(&m.into()) {
+                            Ok(bytes) => {
+                                let message = String::from_utf8(bytes).unwrap();
+                                x.set_olm_session(
+                                    ap_id,
+                                    serde_json::to_string(&session.pickle()).unwrap(),
+                                );
+                                Option::from(message)
+                            }
+                            Err(e) => {
+                                log(&format!("decryption error\n{:#?}", e));
+                                Option::None
+                            }
+                        }
+                    } else {
+                        Option::None
+                    }
+                } else {
+                    Option::None
+                }
+            } else if let OlmMessage::PreKey(m) = serde_json::from_str(&message).unwrap() {
                 let inbound = account.create_inbound_session(identity_key, &m);
 
                 if let Ok(inbound) = inbound {
