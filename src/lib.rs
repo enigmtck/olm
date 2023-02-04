@@ -136,6 +136,15 @@ pub fn create_olm_account() -> String {
 }
 
 #[wasm_bindgen]
+pub fn session_exists(ap_id: String) -> bool {
+    if let Ok(x) = (*ENIGMATICK_STATE).try_lock() {
+        x.get_olm_session(ap_id).is_some()
+    } else {
+        false
+    }
+}
+
+#[wasm_bindgen]
 pub fn create_olm_message(
     ap_id: String,
     message: String,
