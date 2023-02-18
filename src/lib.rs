@@ -72,30 +72,43 @@ pub fn create_olm_message(
         }
     } else if let (Some(identity_key), Some(one_time_key)) = (identity_key, one_time_key) {
         // if there's no pre-existing session and keys are submitted, create a new session
-        let one_time_key_bytes = base64::decode(one_time_key).unwrap();
-        let one_time_key = Curve25519PublicKey::from_bytes(one_time_key_bytes.try_into().unwrap());
-        let identity_key = Curve25519PublicKey::from_base64(&identity_key).unwrap();
+        if let Ok(one_time_key) = Curve25519PublicKey::from_base64(&one_time_key) {
+            if let (Ok(identity_key), Ok(pickled_account)) = (
+                Curve25519PublicKey::from_base64(&identity_key),
+                serde_json::from_str::<AccountPickle>(&pickled_account),
+            ) {
+                let account = Account::from(pickled_account);
 
-        let account =
-            Account::from(serde_json::from_str::<AccountPickle>(&pickled_account).unwrap());
+                let mut outbound = account.create_outbound_session(
+                    SessionConfig::version_2(),
+                    identity_key,
+                    one_time_key,
+                );
 
-        let mut outbound =
-            account.create_outbound_session(SessionConfig::version_2(), identity_key, one_time_key);
+                let message = serde_json::to_string(&outbound.encrypt(message)).unwrap();
 
-        let message = serde_json::to_string(&outbound.encrypt(message)).unwrap();
+                log(&format!(
+                    "OLM SESSION PICKLE: {:#?}",
+                    serde_json::to_string(&outbound.pickle()).unwrap()
+                ));
+                let remote_actor = ap_id;
+                let session = serde_json::to_string(&outbound.pickle()).unwrap();
 
-        log(&format!(
-            "setting pickled olm session: {:#?}",
-            serde_json::to_string(&outbound.pickle()).unwrap()
-        ));
-        let remote_actor = ap_id;
-        let session = serde_json::to_string(&outbound.pickle()).unwrap();
-
-        Option::from(MessageResponse {
-            remote_actor,
-            message,
-            session,
-        })
+                Option::from(MessageResponse {
+                    remote_actor,
+                    message,
+                    session,
+                })
+            } else {
+                log(&format!("FAILED TO DECODE identity_key ({identity_key:#?}) OR pickled_account ({pickled_account:#?})"));
+                Option::None
+            }
+        } else {
+            log(&format!(
+                "FAILED TO DECODE one_time_key ({one_time_key:#?})"
+            ));
+            Option::None
+        }
     } else {
         Option::None
     }
