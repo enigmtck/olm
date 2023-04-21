@@ -37,5 +37,5 @@ features = [
   'Performance'
 ]
 
-# [package.metadata.wasm-pack.profile.release]
-# wasm-opt = false
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
